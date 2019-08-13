@@ -13,8 +13,11 @@ package com.docobo.hh3sdcardtester;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Environment;
+import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.support.annotation.*;
+import android.support.v4.os.EnvironmentCompat;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -50,8 +53,8 @@ public class SDCardTestManager
     }
     
     private final Object        lockObject          = new Object();
-    private final File          mDataHashRecordFile = new File("/sysctl/sdcardtest/test_data_hash.txt");
     private final AtomicBoolean mStarted            = new AtomicBoolean();
+    private final File          mDataHashRecordFile;
     
     private TesterThread mTesterThread = null;
     
@@ -75,6 +78,17 @@ public class SDCardTestManager
     
     private SDCardTestManager()
     {
+        File dataHashRecordFileDir = new File("/sysctl/sdcardtest");
+        if (!dataHashRecordFileDir.exists() && !dataHashRecordFileDir.mkdirs())
+        {
+            dataHashRecordFileDir = new File(Environment.getExternalStorageDirectory(), "sdcardtest");
+        }
+        mDataHashRecordFile = new File(dataHashRecordFileDir, "test_data_hash.txt");
+    }
+    
+    public boolean isStarted()
+    {
+        return mStarted.get();
     }
     
     public boolean start(Context context, TestType testType, TestInterval testInterval)
@@ -168,6 +182,7 @@ public class SDCardTestManager
         @Override
         public void run()
         {
+            mDataHashRecordFile.getParentFile().mkdirs();
             int iteration = 1;
             while (iteration > 0)
             {
@@ -226,8 +241,8 @@ public class SDCardTestManager
                     if (!newDataHashRecorded)
                     {
                         log("*** Failed to record data hash ***");
+                        break;
                     }
-        
         
                     log("Wait for test interval: " + mTestInterval);
                     Thread.sleep(mTestInterval.getIntervalMilliseconds());
@@ -241,7 +256,7 @@ public class SDCardTestManager
                 {
                     log("Exception: " + Log.getStackTraceString(e));
                 }
-                
+    
                 log("+++ Ending Test " + iteration + "+++");
     
                 if (PlatformManager.getInstance().isDocoboDevice())

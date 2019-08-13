@@ -30,6 +30,7 @@ import java.util.ArrayList;
 public class MainActivity extends AppCompatActivity implements View.OnClickListener, Logger
 {
     private TextView mLogTextView;
+    private TextView mTestNumber;
     private Spinner  mTestTypeSelector;
     private Spinner  mTestIntervalSelector;
     
@@ -43,6 +44,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
         
         mLogTextView = (TextView) findViewById(R.id.log_text_view);
+        mTestNumber = (TextView) findViewById(R.id.test_number_textview);
         findViewById(R.id.button_start).setOnClickListener(this);
         findViewById(R.id.button_stop).setOnClickListener(this);
         
@@ -68,6 +70,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             int testInterval = sharedPreferences.getInt("test_interval", 0);
             mTestIntervalSelector.setSelection(testInterval);
     
+            int testNumber = sharedPreferences.getInt("test_number", 0);
+            mTestNumber.setText("" + testNumber);
             if (sharedPreferences.getBoolean("test_initiated", false))
             {
                 findViewById(R.id.button_start).performClick();
@@ -124,24 +128,35 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     {
         TestType testType = TestType.values()[mTestTypeSelector.getSelectedItemPosition()];
         TestInterval interval = TestInterval.values()[mTestIntervalSelector.getSelectedItemPosition()];
+        int testNumber = PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).getInt("test_number", 0);
         
         if (view.getId() == R.id.button_start)
         {
-            SDCardTestManager.getInstance().start(getApplicationContext(), testType, interval);
-            saveTestParams(testType, interval, true);
+            if (!SDCardTestManager.getInstance().isStarted())
+            {
+                testNumber = testNumber + 1;
+                
+                SDCardTestManager.getInstance().start(getApplicationContext(), testType, interval);
+                saveTestParams(testType, interval, testNumber, true);
+            }
         }
         else if (view.getId() == R.id.button_stop)
         {
+            testNumber = 0;
+            
             SDCardTestManager.getInstance().stop(getApplicationContext());
-            saveTestParams(testType, interval, false);
+            saveTestParams(testType, interval, testNumber, false);
         }
+        
+        mTestNumber.setText("" + testNumber);
     }
     
-    private void saveTestParams(TestType testType, TestInterval testInterval, boolean testInitiated)
+    private void saveTestParams(TestType testType, TestInterval testInterval, int testNumber, boolean testInitiated)
     {
         PreferenceManager.getDefaultSharedPreferences(getApplicationContext()).edit()
                 .putInt("test_type", testType.ordinal())
                 .putInt("test_interval", testInterval.ordinal())
+                .putInt("test_number", testNumber)
                 .putBoolean("test_initiated", testInitiated)
                 .apply();
     }
