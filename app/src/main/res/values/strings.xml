@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">HH3 SDCard Tester</string>
+    <string name="start_test">Start Test</string>
+    <string name="stop_test">Stop Test</string>
+
+    <string-array name="test_types">
+        <item>Random</item>
+        <item>Small Files - 1Kb</item>
+        <item>Large Files - 500Kb</item>
+    </string-array>
+    <string-array name="test_interval">
+        <item>1 min</item>
+        <item>5 mins</item>
+        <item>10 mins</item>
+        <item>15 mins</item>
+    </string-array>
+</resources>
