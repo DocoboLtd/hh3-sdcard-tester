@@ -21,6 +21,12 @@ android {
     }
 }
 
+android.applicationVariants.all { variant ->
+    variant.outputs.each { output ->
+        output.outputFileName = "HH3 SDCard Tester-${variant.versionName}.apk"
+    }
+}
+
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'com.squareup.okio:okio:2.3.0'
