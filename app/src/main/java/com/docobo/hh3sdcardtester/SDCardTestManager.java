@@ -14,10 +14,9 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Environment;
-import android.preference.PreferenceManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.support.annotation.*;
-import android.support.v4.os.EnvironmentCompat;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -35,6 +34,9 @@ import java.lang.ref.WeakReference;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import okio.BufferedSink;
@@ -52,8 +54,8 @@ public class SDCardTestManager
         return instance;
     }
     
-    private final Object        lockObject          = new Object();
-    private final AtomicBoolean mStarted            = new AtomicBoolean();
+    private final Object        lockObject = new Object();
+    private final AtomicBoolean mStarted   = new AtomicBoolean();
     private final File          mDataHashRecordFile;
     
     private TesterThread mTesterThread = null;
@@ -78,7 +80,7 @@ public class SDCardTestManager
     
     private SDCardTestManager()
     {
-        File dataHashRecordFileDir = new File("/sysctl/sdcardtest");
+        File dataHashRecordFileDir = new File("/sysctl/sdcardtest-2");
         if (!dataHashRecordFileDir.exists() && !dataHashRecordFileDir.mkdirs())
         {
             dataHashRecordFileDir = new File(Environment.getExternalStorageDirectory(), "sdcardtest");
@@ -91,11 +93,19 @@ public class SDCardTestManager
         return mStarted.get();
     }
     
-    public boolean start(Context context, TestType testType, TestInterval testInterval)
+    public boolean start(Context context, TestType testType, TestInterval testInterval, boolean reset)
     {
         if (mStarted.compareAndSet(false, true))
         {
             mTesterThread = new TesterThread(context, testType, testInterval, mDataHashRecordFile, internal);
+            if (reset)
+            {
+                // Delete all files and restart.
+                mTesterThread.mLogFile.delete();
+                mTesterThread.mDataHashRecordFile.delete();
+                mTesterThread.mTestFile.delete();
+            }
+            
             mTesterThread.start();
             
             automaticLaunch(true, context);
@@ -110,7 +120,7 @@ public class SDCardTestManager
         {
             mTesterThread.interrupt();
             mTesterThread = null;
-    
+            
             mDataHashRecordFile.delete();
             automaticLaunch(false, context);
         }
@@ -166,7 +176,8 @@ public class SDCardTestManager
         private final File         mTestFile;
         private final File         mDataHashRecordFile;
         private final Logger       mLogger;
-        
+        private final File         mLogFile;
+    
         public TesterThread(Context context, TestType testType, TestInterval testInterval, File dataHashRecordFile, Logger logger)
         {
             super("SDCardTester");
@@ -177,32 +188,40 @@ public class SDCardTestManager
             
             this.mTestFile = new File(context.getDir("GeneratedData", Context.MODE_PRIVATE), "DataFile.dat");
             this.mDataHashRecordFile = dataHashRecordFile;
+    
+            this.mLogFile = new File(Environment.getExternalStorageDirectory(), "SDCardTest_Log.txt");
+            Log.d("SDTest", "Log file: " + this.mLogFile);
         }
         
         @Override
         public void run()
         {
-            mDataHashRecordFile.getParentFile().mkdirs();
             int iteration = 1;
-            while (iteration > 0)
+            boolean interrupted = false;
+            while (!interrupted)
             {
                 log("+++ Starting Test " + iteration + " +++");
+                boolean shutdown = false;
                 try
                 {
-                    long sleepSeconds = 30;
-                    log("Sleep for " + sleepSeconds + " secs before test");
-                    Thread.sleep(sleepSeconds * 1000);
-    
+                    long timeToWaitAfterBoot = (1 * 60000) - SystemClock.elapsedRealtime();
+                    if (timeToWaitAfterBoot > 0)
+                    {
+                        log("Sleep before test start: " + toTimeSpanString(timeToWaitAfterBoot));
+                        Thread.sleep(timeToWaitAfterBoot);
+                    }
+                    log("Time since device boot: " + toTimeSpanString(SystemClock.elapsedRealtime()));
+                    
                     log(String.format("Test Type: %s", mTestType));
                     log(String.format("Test Interval: %s", mTestInterval));
                     log(String.format("Generated Data File: %s (Exists: %s)", mTestFile, mTestFile.exists()));
                     log(String.format("Generated Data Hash: %s (Exists: %s)", mDataHashRecordFile, mDataHashRecordFile.exists()));
-    
+                    
                     String lastGeneratedDataHash = calculateHash(mTestFile);
                     log("Last generated data hash: " + lastGeneratedDataHash);
                     String lastDataHashValue = readFile(mDataHashRecordFile);
                     log("Last recorded data hash: " + lastDataHashValue);
-    
+                    
                     if (lastDataHashValue == null)
                     {
                         log(" *** TEST: Initialising test... No Validation");
@@ -228,43 +247,116 @@ public class SDCardTestManager
                         break;
                     }
                     
+                    {
+                        log("Initialise Data Hash Record file");
+                        boolean initialisationFailed = false;
+                        File dataHashRecordParent = mDataHashRecordFile.getParentFile();
+                        if (!dataHashRecordParent.exists() && !dataHashRecordParent.mkdirs())
+                        {
+                            log("*** ERROR: FAILED TO CREATE DIRS - " + dataHashRecordParent);
+                            initialisationFailed = true;
+                        }
+                        if (dataHashRecordParent.exists())
+                        {
+                            if (!dataHashRecordParent.canRead() && !dataHashRecordParent.setReadable(true, false))
+                            {
+                                log("*** ERROR: FAILED TO SET READABLE - " + dataHashRecordParent);
+                                initialisationFailed = true;
+                            }
+                            if (!dataHashRecordParent.canWrite() && !dataHashRecordParent.setWritable(true, false))
+                            {
+                                log("*** ERROR: FAILED TO SET WRITABLE - " + dataHashRecordParent);
+                                initialisationFailed = true;
+                            }
+                        }
+                        
+                        if (mDataHashRecordFile.exists() || mDataHashRecordFile.createNewFile())
+                        {
+                            if (!mDataHashRecordFile.canRead() && !mDataHashRecordFile.setReadable(true, false))
+                            {
+                                log("*** ERROR: FAILED TO SET READABLE - " + mDataHashRecordFile);
+                                initialisationFailed = true;
+                            }
+                            if (!mDataHashRecordFile.canWrite() && !mDataHashRecordFile.setWritable(true, false))
+                            {
+                                log("*** ERROR: FAILED TO SET WRITABLE - " + mDataHashRecordFile);
+                                initialisationFailed = true;
+                            }
+                        }
+                        
+                        if (initialisationFailed)
+                        {
+                            break;
+                        }
+                    }
+                    
                     /*
                      * Generate random data
                      */
-                    String testDataHash = generateTestData(mTestFile, mTestType.getByteCount());
-                    log("Test Data Hash: " + testDataHash);
-        
+                    long generateByteCount = mTestType.getByteCount();
+                    String testDataHash = generateTestData(mTestFile, generateByteCount);
+                    log(String.format("Test Data Hash: %s (ByteCount: %s)", testDataHash, generateByteCount));
+                    
                     /*
                      * Record the data hash.
                      */
-                    boolean newDataHashRecorded = writeToFile(mDataHashRecordFile, testDataHash);
+                    boolean newDataHashRecorded = writeToFile(mDataHashRecordFile, false, testDataHash);
                     if (!newDataHashRecorded)
                     {
                         log("*** Failed to record data hash ***");
                         break;
                     }
-        
-                    log("Wait for test interval: " + mTestInterval);
-                    Thread.sleep(mTestInterval.getIntervalMilliseconds());
+                    shutdown = true;
                 }
                 catch (InterruptedException e)
                 {
                     // Prevent the device from rebooting.
-                    break;
+                    interrupted = true;
+                    shutdown = false;
                 }
                 catch (Exception e)
                 {
                     log("Exception: " + Log.getStackTraceString(e));
+                    shutdown = false;
                 }
-    
-                log("+++ Ending Test " + iteration + "+++");
-    
-                if (PlatformManager.getInstance().isDocoboDevice())
+                
+                if (!interrupted)
                 {
+                    try
+                    {
+                        log("Wait for test interval: " + mTestInterval);
+                        Thread.sleep(mTestInterval.getIntervalMilliseconds());
+                    }
+                    catch (InterruptedException e)
+                    {
+                        interrupted = true;
+                        shutdown = false;
+                    }
+                }
+                
+                log("+++ Ending Test " + iteration + " +++");
+                
+                if (shutdown && PlatformManager.getInstance().isDocoboDevice())
+                {
+                    log("Initiating reboot...");
                     PlatformManager.getInstance().rebootDevice(mApplicationContext, "SDCardTest-Reboot");
                     break;
                 }
                 iteration++;
+            }
+        }
+    
+        private void deleteAll(File... filesToDelete)
+        {
+            if (filesToDelete == null) return;
+            
+            for (File file : filesToDelete)
+            {
+                if (file.isDirectory())
+                {
+                    deleteAll(file.listFiles());
+                }
+                file.delete();
             }
         }
     
@@ -276,7 +368,7 @@ public class SDCardTestManager
             }
             
             String md5Hash = null;
-    
+            
             byte[] dataBuffer = new byte[20 * 1024];
             BufferedSource bufferedSource = null;
             MessageDigest messageDigest = null;
@@ -290,7 +382,7 @@ public class SDCardTestManager
                 {
                     messageDigest.update(dataBuffer, 0, readLength);
                 }
-    
+                
                 md5Hash = toHexString(messageDigest.digest());
             }
             catch (Exception e)
@@ -304,7 +396,7 @@ public class SDCardTestManager
             
             return md5Hash;
         }
-    
+        
         private String generateTestData(File outputFile, long targetDataLength) throws NoSuchAlgorithmException, IOException
         {
             long generatedDataCount = 0;
@@ -316,7 +408,7 @@ public class SDCardTestManager
             {
                 outputFile.createNewFile();
             }
-    
+            
             BufferedSink bufferedSink = Okio.buffer(Okio.sink(outputFile));
             try
             {
@@ -339,14 +431,14 @@ public class SDCardTestManager
             return toHexString(messageDigest.digest());
         }
         
-        private boolean writeToFile(@NonNull File file, @NonNull String value)
+        private boolean writeToFile(@NonNull File file, boolean append, @NonNull String value)
         {
             boolean result = false;
             
             Sink sink = null;
             try
             {
-                sink = Okio.sink(file);
+                sink = append ? Okio.appendingSink(file) : Okio.sink(file);
                 Okio.buffer(sink)
                         .writeUtf8(value)
                         .flush();
@@ -403,24 +495,58 @@ public class SDCardTestManager
                 log("Exception: close: " + Log.getStackTraceString(e));
             }
         }
-    
+        
         private void log(String message)
         {
-            this.mLogger.onLog(message);
+            final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSS", Locale.US);
+            String logEntry = "[" + sdf.format(new Date()) + "] " + message;
+            
+            writeToFile(this.mLogFile, true, logEntry + "\r\n");
+            
+            this.mLogger.onLog(logEntry);
         }
         
-        private static String toHexString(byte[] bytes) {
-            char[] hexArray = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
+        private static String toHexString(byte[] bytes)
+        {
+            char[] hexArray = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
             char[] hexChars = new char[bytes.length * 2];
             int v;
-            for ( int j = 0; j < bytes.length; j++ ) {
+            for (int j = 0; j < bytes.length; j++)
+            {
                 v = bytes[j] & 0xFF;
-                hexChars[j*2] = hexArray[v/16];
-                hexChars[j*2 + 1] = hexArray[v%16];
+                hexChars[j * 2] = hexArray[v / 16];
+                hexChars[j * 2 + 1] = hexArray[v % 16];
             }
             return new String(hexChars);
         }
         
+        private static String toTimeSpanString(long timeInMilliseconds)
+        {
+            long hours = timeInMilliseconds / 3600000;
+            long minutes = (timeInMilliseconds % 3600000) / 60000;
+            long seconds = (timeInMilliseconds % 60000) / 1000;
+            
+            return String.format(Locale.US, "%1$02d:%2$02d:%3$02d", hours, minutes, seconds);
+        }
+        
+        private void executeCommand(String command)
+        {
+            try
+            {
+                String[] executeCommand = new String[] { "/system/bin/sh", "-c", command };
+                Process process = Runtime.getRuntime().exec(executeCommand);
+                
+                BufferedSource source = Okio.buffer(Okio.source(process.getInputStream()));
+                while (!source.exhausted())
+                {
+                    log(" > " + source.readUtf8());
+                }
+            }
+            catch (IOException e)
+            {
+                log(String.format("Exception: executeCommand [%s] : %s", command, Log.getStackTraceString(e)));
+            }
+        }
     }
     
     private static class Helper

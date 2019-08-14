@@ -181,7 +181,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             {
                 testNumber = testNumber + 1;
                 
-                SDCardTestManager.getInstance().start(getApplicationContext(), testType, interval);
+                SDCardTestManager.getInstance().start(getApplicationContext(), testType, interval, testNumber == 1);
                 saveTestParams(testType, interval, testNumber, true);
             }
         }
