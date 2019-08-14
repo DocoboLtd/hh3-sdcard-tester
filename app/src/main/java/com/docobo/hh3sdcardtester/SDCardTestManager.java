@@ -200,6 +200,23 @@ public class SDCardTestManager
             boolean interrupted = false;
             while (!interrupted)
             {
+                if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState()))
+                {
+                    mLogger.onLog("Waiting for external storage mount...");
+                    while (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState()))
+                    {
+                        try
+                        {
+                            Thread.sleep(500);
+                        }
+                        catch (InterruptedException e)
+                        {
+                            return;
+                        }
+                    }
+                    mLogger.onLog("External storage mounting complete...");
+                }
+                
                 log("+++ Starting Test " + iteration + " +++");
                 boolean shutdown = false;
                 try
