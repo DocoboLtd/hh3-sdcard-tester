@@ -11,11 +11,16 @@
 package com.docobo.hh3sdcardtester.ui;
 
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.PersistableBundle;
 import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 
@@ -29,8 +34,10 @@ import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener, Logger
 {
+    private ScrollView mScrollView;
     private TextView mLogTextView;
     private TextView mTestNumber;
+    private TextView mDeviceID;
     private Spinner  mTestTypeSelector;
     private Spinner  mTestIntervalSelector;
     
@@ -42,7 +49,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        
+        setTitle(buildTitleText());
+    
+        mScrollView = (ScrollView) findViewById(R.id.scroll_view);
         mLogTextView = (TextView) findViewById(R.id.log_text_view);
         mTestNumber = (TextView) findViewById(R.id.test_number_textview);
         findViewById(R.id.button_start).setOnClickListener(this);
@@ -60,23 +69,58 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         
         SDCardTestManager.getInstance().setLogger(this);
         updateLogTextView();
+        initialiseUiFromPreferences();
         
-        if (savedInstanceState == null)
+        if (savedInstanceState != null)
         {
-            SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-            int testType = sharedPreferences.getInt("test_type", 0);
-            mTestTypeSelector.setSelection(testType);
-            
-            int testInterval = sharedPreferences.getInt("test_interval", 0);
-            mTestIntervalSelector.setSelection(testInterval);
-    
-            int testNumber = sharedPreferences.getInt("test_number", 0);
-            mTestNumber.setText("" + testNumber);
-            if (sharedPreferences.getBoolean("test_initiated", false))
-            {
-                findViewById(R.id.button_start).performClick();
-            }
+            mTestTypeSelector.setSelection(savedInstanceState.getInt("mTestTypeSelector", 0));
+            mTestIntervalSelector.setSelection(savedInstanceState.getInt("mTestIntervalSelector", 0));
+            mTestNumber.setText(savedInstanceState.getString("mTestNumber"));
         }
+    }
+    
+    private void initialiseUiFromPreferences()
+    {
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        int testType = sharedPreferences.getInt("test_type", 0);
+        mTestTypeSelector.setSelection(testType);
+    
+        int testInterval = sharedPreferences.getInt("test_interval", 0);
+        mTestIntervalSelector.setSelection(testInterval);
+    
+        int testNumber = sharedPreferences.getInt("test_number", 0);
+        mTestNumber.setText("" + testNumber);
+        if (sharedPreferences.getBoolean("test_initiated", false))
+        {
+            findViewById(R.id.button_start).performClick();
+        }
+    }
+    
+    @Override
+    protected void onSaveInstanceState(Bundle outState)
+    {
+        outState.putInt("mTestTypeSelector", mTestTypeSelector.getSelectedItemPosition());
+        outState.putInt("mTestIntervalSelector", mTestIntervalSelector.getSelectedItemPosition());
+        outState.putString("mTestNumber", mTestNumber.getText().toString());
+        super.onSaveInstanceState(outState);
+    }
+    
+    private CharSequence buildTitleText()
+    {
+        StringBuilder titleBuilder = new StringBuilder(getString(R.string.app_name));
+        titleBuilder.append(" - V");
+        try
+        {
+            PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            titleBuilder.append(packageInfo.versionName);
+        }
+        catch (Exception e)
+        {
+            titleBuilder.append(Build.UNKNOWN);
+        }
+        titleBuilder.append(" [ Device ID: ").append(Build.SERIAL).append(" ]");
+    
+        return titleBuilder;
     }
     
     @Override
@@ -112,13 +156,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 StringBuilder displayString = new StringBuilder();
                 synchronized (sLogMessageBuffer)
                 {
-                    for (int index = sLogMessageBuffer.size() - 1; index >= 0; index--)
+                    for (int index = 0; index < sLogMessageBuffer.size(); index++)
                     {
                         displayString.append(sLogMessageBuffer.get(index)).append("\n");
                     }
                 }
                 
                 mLogTextView.setText(displayString);
+                mScrollView.fullScroll(View.FOCUS_DOWN);
             }
         });
     }
