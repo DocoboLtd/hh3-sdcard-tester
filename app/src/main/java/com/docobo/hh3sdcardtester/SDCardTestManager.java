@@ -83,9 +83,9 @@ public class SDCardTestManager
         File dataHashRecordFileDir = new File("/sysctl/sdcardtest-2");
         if (!dataHashRecordFileDir.exists() && !dataHashRecordFileDir.mkdirs())
         {
-            dataHashRecordFileDir = new File(Environment.getExternalStorageDirectory(), "sdcardtest");
+            dataHashRecordFileDir = new File(Environment.getExternalStorageDirectory(), "SDCardTest");
         }
-        mDataHashRecordFile = new File(dataHashRecordFileDir, "test_data_hash.txt");
+        mDataHashRecordFile = new File(dataHashRecordFileDir, "data_hash_record.txt");
     }
     
     public boolean isStarted()
@@ -93,19 +93,11 @@ public class SDCardTestManager
         return mStarted.get();
     }
     
-    public boolean start(Context context, TestType testType, TestInterval testInterval, boolean reset)
+    public boolean start(Context context, TestType testType, TestInterval testInterval, int testCycle)
     {
         if (mStarted.compareAndSet(false, true))
         {
-            mTesterThread = new TesterThread(context, testType, testInterval, mDataHashRecordFile, internal);
-            if (reset)
-            {
-                // Delete all files and restart.
-                mTesterThread.mLogFile.delete();
-                mTesterThread.mDataHashRecordFile.delete();
-                mTesterThread.mTestFile.delete();
-            }
-            
+            mTesterThread = new TesterThread(context, testType, testInterval, mDataHashRecordFile, testCycle, internal);
             mTesterThread.start();
             
             automaticLaunch(true, context);
@@ -177,19 +169,21 @@ public class SDCardTestManager
         private final File         mDataHashRecordFile;
         private final Logger       mLogger;
         private final File         mLogFile;
+        private final int          mTestCycle;
     
-        public TesterThread(Context context, TestType testType, TestInterval testInterval, File dataHashRecordFile, Logger logger)
+        public TesterThread(Context context, TestType testType, TestInterval testInterval, File dataHashRecordFile, int testCycle, Logger logger)
         {
             super("SDCardTester");
             this.mApplicationContext = context.getApplicationContext();
             this.mTestType = testType;
             this.mTestInterval = testInterval;
+            this.mTestCycle = testCycle;
             this.mLogger = logger;
             
             this.mTestFile = new File(context.getDir("GeneratedData", Context.MODE_PRIVATE), "DataFile.dat");
             this.mDataHashRecordFile = dataHashRecordFile;
     
-            this.mLogFile = new File(Environment.getExternalStorageDirectory(), "SDCardTest_Log.txt");
+            this.mLogFile = new File(Environment.getExternalStorageDirectory(), "SDCardTest/Log.txt");
             Log.d("SDTest", "Log file: " + this.mLogFile);
         }
         
@@ -217,6 +211,43 @@ public class SDCardTestManager
                     mLogger.onLog("External storage mounting complete...");
                 }
                 
+                if (mTestCycle <= 1)
+                {
+                    if (mLogFile.exists())
+                    {
+                        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("'Log_'yyyyMMdd_HHmmss'.txt'", Locale.US);
+                        File archiveFile = new File(mLogFile.getParentFile(), simpleDateFormat.format(new Date()));
+                        while (archiveFile.exists())
+                        {
+                            try
+                            {
+                                Thread.sleep(200);
+                            }
+                            catch (InterruptedException e)
+                            {
+                            }
+    
+                            archiveFile = new File(mLogFile.getParentFile(), simpleDateFormat.format(new Date()));
+                        }
+                        if (!mLogFile.renameTo(archiveFile))
+                        {
+                            mLogger.onLog("Failed to archive old log file");
+                        }
+                    }
+                    
+                    // Delete all files and restart.
+                    mLogFile.delete();
+                    mDataHashRecordFile.delete();
+                    mTestFile.delete();
+                }
+                else
+                {
+                    // Add this line as a log cycle break to the the log file.
+                    writeToFile(this.mLogFile, true, "**********************************************************\r\n");
+                }
+                
+                if (interrupted) break;
+                
                 log("+++ Starting Test " + iteration + " +++");
                 boolean shutdown = false;
                 try
@@ -228,7 +259,8 @@ public class SDCardTestManager
                         Thread.sleep(timeToWaitAfterBoot);
                     }
                     log("Time since device boot: " + toTimeSpanString(SystemClock.elapsedRealtime()));
-                    
+    
+                    log(String.format("Test Cycle: %s", mTestCycle));
                     log(String.format("Test Type: %s", mTestType));
                     log(String.format("Test Interval: %s", mTestInterval));
                     log(String.format("Generated Data File: %s (Exists: %s)", mTestFile, mTestFile.exists()));
@@ -515,7 +547,7 @@ public class SDCardTestManager
         
         private void log(String message)
         {
-            final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSS", Locale.US);
+            final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US);
             String logEntry = "[" + sdf.format(new Date()) + "] " + message;
             
             writeToFile(this.mLogFile, true, logEntry + "\r\n");
