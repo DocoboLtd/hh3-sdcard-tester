@@ -210,42 +210,8 @@ public class SDCardTestManager
                     }
                     mLogger.onLog("External storage mounting complete...");
                 }
-                
-                if (mTestCycle <= 1)
-                {
-                    if (mLogFile.exists())
-                    {
-                        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("'Log_'yyyyMMdd_HHmmss'.txt'", Locale.US);
-                        File archiveFile = new File(mLogFile.getParentFile(), simpleDateFormat.format(new Date()));
-                        while (archiveFile.exists())
-                        {
-                            try
-                            {
-                                Thread.sleep(200);
-                            }
-                            catch (InterruptedException e)
-                            {
-                            }
     
-                            archiveFile = new File(mLogFile.getParentFile(), simpleDateFormat.format(new Date()));
-                        }
-                        if (!mLogFile.renameTo(archiveFile))
-                        {
-                            mLogger.onLog("Failed to archive old log file");
-                        }
-                    }
-                    
-                    // Delete all files and restart.
-                    mLogFile.delete();
-                    mDataHashRecordFile.delete();
-                    mTestFile.delete();
-                }
-                else
-                {
-                    // Add this line as a log cycle break to the the log file.
-                    writeToFile(this.mLogFile, true, "**********************************************************\r\n");
-                }
-                
+                initialiseLogFile();
                 if (interrupted) break;
                 
                 log("+++ Starting Test " + iteration + " +++");
@@ -392,6 +358,47 @@ public class SDCardTestManager
                     break;
                 }
                 iteration++;
+            }
+        }
+    
+        private void initialiseLogFile()
+        {
+            // Create the log file parent directories.
+            this.mLogFile.getParentFile().mkdirs();
+            
+            if (mTestCycle <= 1)
+            {
+                if (mLogFile.exists())
+                {
+                    SimpleDateFormat simpleDateFormat = new SimpleDateFormat("'Log_'yyyyMMdd_HHmmss'.txt'", Locale.US);
+                    File archiveFile = new File(mLogFile.getParentFile(), simpleDateFormat.format(new Date()));
+                    while (archiveFile.exists())
+                    {
+                        try
+                        {
+                            Thread.sleep(200);
+                        }
+                        catch (InterruptedException e)
+                        {
+                        }
+                
+                        archiveFile = new File(mLogFile.getParentFile(), simpleDateFormat.format(new Date()));
+                    }
+                    if (!mLogFile.renameTo(archiveFile))
+                    {
+                        mLogger.onLog("Failed to archive old log file");
+                    }
+                }
+        
+                // Delete all files and restart.
+                mLogFile.delete();
+                mDataHashRecordFile.delete();
+                mTestFile.delete();
+            }
+            else
+            {
+                // Add this line as a log cycle break to the the log file.
+                writeToFile(this.mLogFile, true, "**********************************************************\r\n");
             }
         }
     
