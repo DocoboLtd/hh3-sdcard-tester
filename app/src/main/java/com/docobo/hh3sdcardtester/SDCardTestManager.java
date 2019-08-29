@@ -29,6 +29,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.security.MessageDigest;
@@ -84,6 +86,10 @@ public class SDCardTestManager
         if (!dataHashRecordFileDir.exists() && !dataHashRecordFileDir.mkdirs())
         {
             dataHashRecordFileDir = new File(Environment.getExternalStorageDirectory(), "SDCardTest");
+        }
+        else
+        {
+            setFilePermissionsToPublic(dataHashRecordFileDir);
         }
         mDataHashRecordFile = new File(dataHashRecordFileDir, "data_hash_record.txt");
     }
@@ -194,6 +200,20 @@ public class SDCardTestManager
             boolean interrupted = false;
             while (!interrupted)
             {
+                try
+                {
+                    long timeToWaitAfterBoot = (1 * 60000) - SystemClock.elapsedRealtime();
+                    if (timeToWaitAfterBoot > 0)
+                    {
+                        mLogger.onLog("Sleep before test start: " + toTimeSpanString(timeToWaitAfterBoot));
+                        Thread.sleep(timeToWaitAfterBoot);
+                    }
+                }
+                catch (InterruptedException e)
+                {
+                    return;
+                }
+                
                 if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState()))
                 {
                     mLogger.onLog("Waiting for external storage mount...");
@@ -201,7 +221,7 @@ public class SDCardTestManager
                     {
                         try
                         {
-                            Thread.sleep(500);
+                            Thread.sleep(1000);
                         }
                         catch (InterruptedException e)
                         {
@@ -218,7 +238,7 @@ public class SDCardTestManager
                 boolean shutdown = false;
                 try
                 {
-                    long timeToWaitAfterBoot = (1 * 60000) - SystemClock.elapsedRealtime();
+                    long timeToWaitAfterBoot = (2 * 60000) - SystemClock.elapsedRealtime();
                     if (timeToWaitAfterBoot > 0)
                     {
                         log("Sleep before test start: " + toTimeSpanString(timeToWaitAfterBoot));
@@ -232,95 +252,107 @@ public class SDCardTestManager
                     log(String.format("Generated Data File: %s (Exists: %s)", mTestFile, mTestFile.exists()));
                     log(String.format("Generated Data Hash: %s (Exists: %s)", mDataHashRecordFile, mDataHashRecordFile.exists()));
                     
-                    String lastGeneratedDataHash = calculateHash(mTestFile);
-                    log("Last generated data hash: " + lastGeneratedDataHash);
-                    String lastDataHashValue = readFile(mDataHashRecordFile);
-                    log("Last recorded data hash: " + lastDataHashValue);
-                    
-                    if (lastDataHashValue == null)
+                    if (mTestType == TestType.RebootOnly)
                     {
-                        log(" *** TEST: Initialising test... No Validation");
-                    }
-                    else if (lastGeneratedDataHash != null)
-                    {
-                        if (lastGeneratedDataHash.equals(lastDataHashValue))
-                        {
-                            log(" *** TEST: Validation Success");
-                        }
-                        else
-                        {
-                            log(" *** TEST: Validation Failed");
-                            log("*** ERROR: DATA FILES OUT OF SYNC");
-                            // Stop the test so the failure can be seen.
-                            break;
-                        }
+                        log("Reboot only test, no write operations to /data");
                     }
                     else
                     {
-                        log("*** TEST: Generated data has been wiped");
-                        log("*** ERROR: FACTORY RESET DETECTED");
-                        break;
-                    }
-                    
-                    {
-                        log("Initialise Data Hash Record file");
-                        boolean initialisationFailed = false;
-                        File dataHashRecordParent = mDataHashRecordFile.getParentFile();
-                        if (!dataHashRecordParent.exists() && !dataHashRecordParent.mkdirs())
+                        String lastGeneratedDataHash = calculateHash(mTestFile);
+                        log("Last generated data hash: " + lastGeneratedDataHash);
+                        String lastDataHashValue = readFile(mDataHashRecordFile);
+                        log("Last recorded data hash: " + lastDataHashValue);
+    
+                        if (lastDataHashValue == null)
                         {
-                            log("*** ERROR: FAILED TO CREATE DIRS - " + dataHashRecordParent);
-                            initialisationFailed = true;
+                            log(" *** TEST: Initialising test... No Validation");
                         }
-                        if (dataHashRecordParent.exists())
+                        else if (lastGeneratedDataHash != null)
                         {
-                            if (!dataHashRecordParent.canRead() && !dataHashRecordParent.setReadable(true, false))
+                            if (lastGeneratedDataHash.equals(lastDataHashValue))
                             {
-                                log("*** ERROR: FAILED TO SET READABLE - " + dataHashRecordParent);
-                                initialisationFailed = true;
+                                log(" *** TEST: Validation Success");
                             }
-                            if (!dataHashRecordParent.canWrite() && !dataHashRecordParent.setWritable(true, false))
+                            else
                             {
-                                log("*** ERROR: FAILED TO SET WRITABLE - " + dataHashRecordParent);
-                                initialisationFailed = true;
+                                log(" *** TEST: Validation Failed");
+                                log("*** ERROR: DATA FILES OUT OF SYNC");
+                                // Stop the test so the failure can be seen.
+                                break;
                             }
                         }
-                        
-                        if (mDataHashRecordFile.exists() || mDataHashRecordFile.createNewFile())
+                        else
                         {
-                            if (!mDataHashRecordFile.canRead() && !mDataHashRecordFile.setReadable(true, false))
+                            log("*** TEST: Generated data has been wiped");
+                            log("*** ERROR: FACTORY RESET DETECTED");
+                            break;
+                        }
+    
+                        {
+                            log("Initialise Data Hash Record file");
+                            boolean initialisationFailed = false;
+                            File dataHashRecordParent = mDataHashRecordFile.getParentFile();
+                            if (!dataHashRecordParent.exists() && !dataHashRecordParent.mkdirs())
                             {
-                                log("*** ERROR: FAILED TO SET READABLE - " + mDataHashRecordFile);
+                                log("*** ERROR: FAILED TO CREATE DIRS - " + dataHashRecordParent);
                                 initialisationFailed = true;
                             }
-                            if (!mDataHashRecordFile.canWrite() && !mDataHashRecordFile.setWritable(true, false))
+                            if (dataHashRecordParent.exists())
                             {
-                                log("*** ERROR: FAILED TO SET WRITABLE - " + mDataHashRecordFile);
-                                initialisationFailed = true;
+                                if (!dataHashRecordParent.canRead() && !dataHashRecordParent.setReadable(true, false))
+                                {
+                                    log("*** ERROR: FAILED TO SET READABLE - " + dataHashRecordParent);
+                                    initialisationFailed = true;
+                                }
+                                if (!dataHashRecordParent.canWrite() && !dataHashRecordParent.setWritable(true, false))
+                                {
+                                    log("*** ERROR: FAILED TO SET WRITABLE - " + dataHashRecordParent);
+                                    initialisationFailed = true;
+                                }
+                            }
+        
+                            if (mDataHashRecordFile.exists() || mDataHashRecordFile.createNewFile())
+                            {
+                                if (!mDataHashRecordFile.canRead() && !mDataHashRecordFile.setReadable(true, false))
+                                {
+                                    log("*** ERROR: FAILED TO SET READABLE - " + mDataHashRecordFile);
+                                    initialisationFailed = true;
+                                }
+                                if (!mDataHashRecordFile.canWrite() && !mDataHashRecordFile.setWritable(true, false))
+                                {
+                                    log("*** ERROR: FAILED TO SET WRITABLE - " + mDataHashRecordFile);
+                                    initialisationFailed = true;
+                                }
+                            }
+        
+                            if (initialisationFailed)
+                            {
+                                break;
                             }
                         }
-                        
-                        if (initialisationFailed)
+    
+                        /*
+                         * Generate random data
+                         */
+                        long generateByteCount = mTestType.getByteCount();
+                        String testDataHash = generateTestData(mTestFile, generateByteCount);
+                        log(String.format("Test Data Hash: %s (ByteCount: %s)", testDataHash, generateByteCount));
+    
+                        /*
+                         * Record the data hash.
+                         */
+                        boolean newDataHashRecorded = writeToFile(mDataHashRecordFile, false, testDataHash);
+                        if (newDataHashRecorded)
                         {
+                            setFilePermissionsToPublic(mDataHashRecordFile);
+                        }
+                        else
+                        {
+                            log("*** Failed to record data hash ***");
                             break;
                         }
                     }
                     
-                    /*
-                     * Generate random data
-                     */
-                    long generateByteCount = mTestType.getByteCount();
-                    String testDataHash = generateTestData(mTestFile, generateByteCount);
-                    log(String.format("Test Data Hash: %s (ByteCount: %s)", testDataHash, generateByteCount));
-                    
-                    /*
-                     * Record the data hash.
-                     */
-                    boolean newDataHashRecorded = writeToFile(mDataHashRecordFile, false, testDataHash);
-                    if (!newDataHashRecorded)
-                    {
-                        log("*** Failed to record data hash ***");
-                        break;
-                    }
                     shutdown = true;
                 }
                 catch (InterruptedException e)
@@ -365,6 +397,7 @@ public class SDCardTestManager
         {
             // Create the log file parent directories.
             this.mLogFile.getParentFile().mkdirs();
+            setFilePermissionsToPublic(this.mLogFile.getParentFile());
             
             if (mTestCycle <= 1)
             {
@@ -464,10 +497,16 @@ public class SDCardTestManager
             {
                 outputFile.createNewFile();
             }
-            
-            BufferedSink bufferedSink = Okio.buffer(Okio.sink(outputFile));
+    
+            FileOutputStream fileOutputStream = null;
+            BufferedSink bufferedSink = null;
             try
             {
+                fileOutputStream = new FileOutputStream(outputFile);
+                FileDescriptor fd = fileOutputStream.getFD();
+                
+                bufferedSink = Okio.buffer(Okio.sink(fileOutputStream));
+                
                 byte[] buffer = new byte[20 * 1024];
                 while (generatedDataCount < targetDataLength)
                 {
@@ -479,10 +518,16 @@ public class SDCardTestManager
                     
                     generatedDataCount += buffer.length;
                 }
+    
+                bufferedSink.flush();
+                bufferedSink.emit();
+                
+                fd.sync();
             }
             finally
             {
                 close(bufferedSink);
+                close(fileOutputStream);
             }
             return toHexString(messageDigest.digest());
         }
@@ -605,8 +650,10 @@ public class SDCardTestManager
         }
     }
     
-    private static class Helper
+    private static void setFilePermissionsToPublic(@NonNull File file)
     {
-        private Helper() {}
+        file.setWritable(true, false);
+        file.setReadable(true, false);
+        //file.setExecutable(true, false);
     }
 }

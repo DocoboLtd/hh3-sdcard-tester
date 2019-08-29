@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 
 public enum TestType
 {
+    RebootOnly,
     Random,
     SmallFileTest,
     LargeFileTest;
@@ -22,6 +23,8 @@ public enum TestType
     {
         switch (this)
         {
+            case RebootOnly:
+                return 0;
             case Random:
                 return new SecureRandom().nextInt(50) * 10 * 1024; // Multiples of 10kb up to 500kb
             case LargeFileTest:

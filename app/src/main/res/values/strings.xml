@@ -4,9 +4,10 @@
     <string name="stop_test">Stop Test</string>
 
     <string-array name="test_types">
-        <item>Random</item>
-        <item>Small Files - 1Kb</item>
-        <item>Large Files - 500Kb</item>
+        <item>Reboot Only</item>
+        <item>Write Random</item>
+        <item>Write Small Files - 1Kb</item>
+        <item>Write Large Files - 500Kb</item>
     </string-array>
     <string-array name="test_interval">
         <item>1 min</item>

@@ -89,7 +89,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mTestIntervalSelector.setSelection(testInterval);
     
         int testNumber = sharedPreferences.getInt("test_number", 0);
-        mTestNumber.setText("" + testNumber);
+        mTestNumber.setText(String.format("%s", testNumber));
         if (sharedPreferences.getBoolean("test_initiated", false))
         {
             findViewById(R.id.button_start).performClick();
